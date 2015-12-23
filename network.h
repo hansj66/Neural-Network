@@ -17,7 +17,8 @@ public:
 	Network(Layers layers);
 	~Network();
 
-    int Network::Train(TrainingSet & set, double learningConstant, double maxError, int maxIter);
+	int Network::Train(TrainingSet & set, double learningConstant, double maxError, int maxIter);
+	void ExportAsDigraph(QString graphVizFileName);
 
 	void Trace();
 
@@ -29,14 +30,14 @@ private:
 	vector<vector<double>> _bias;
 	vector<Matrix> _weights;
 
-    vector<double> & Activate(vector<double> input);
-    void UpdateWeights(double learningConstant);
-    void BackPropagate();
-    inline double Sigmoid(double x, double temperature = 1);
+	vector<double> & Activate(vector<double> input);
+	void UpdateWeights(double learningConstant);
+	void BackPropagate();
+	inline double Sigmoid(double x, double temperature = 1);
 	inline double Derivative(double x);
 	std::vector<double> Normalize(std::vector<double> input);
-    double SetError(vector<double> expected);
-    void ShowOff(TrainingSet & set);
+	double SetError(vector<double> expected);
+	void ShowOff(TrainingSet & set);
 
 	// Remove in release
 	void TraceLayers();
