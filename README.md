@@ -1,7 +1,7 @@
 # Neural-Network
 
 First attempts at implementing a neural network. The network is fully connected. 
-Data present in the input nodes is normalized (1/max). Nodes in hidden layers are using sigmoid activation. The output layer is using softmax.
+Data present in the input nodes is normalized (x/max x). Nodes in hidden layers are using sigmoid activation. The output layer is using softmax.
 
 ##Examples.
 
