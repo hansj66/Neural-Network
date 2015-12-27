@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <random>
+#include <QTextStream>
 
 using namespace std;
 
@@ -13,7 +14,7 @@ public:
     Matrix(size_t i, size_t j,  mt19937 & engine, uniform_real_distribution<> & distribution);
 	~Matrix();
 	double & Element(size_t i, size_t j);
-	void Trace(string name, char nameI, char nameJ);
+    void Serialize(QTextStream & stream);
 
 private:
 	size_t	_i;

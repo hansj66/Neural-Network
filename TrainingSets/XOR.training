@@ -1,5 +1,6 @@
-# XOR
-1,1 -> 0
-1,0 -> 1
-0,1 -> 1
-0,0 -> 0
+# XOR. two output nodes because of softmax in the output layer
+# Output encoding: (0,1) == logic 0. (1,0) == logic 1
+1,1 -> 0, 1
+1,0 -> 1, 0
+0,1 -> 1, 0
+0,0 -> 0, 1

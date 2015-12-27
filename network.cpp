@@ -4,22 +4,18 @@
 #include <time.h>
 #include <QFile>
 #include <QTextStream>
-
-// Reading materials:
-//  http://mattmazur.com/2015/03/17/a-step-by-step-backpropagation-example/
-//  http://neuralnetworksanddeeplearning.com/chap2.html
-//  http://neuralnetworksanddeeplearning.com/chap1.html
+#include <limits>
 
 
 using namespace std;
 Network::Network(Layers layers) :
-	_layers(layers)
+    _nodes(layers)
 {
 	random_device random;
 	mt19937 engine(random());
-	uniform_real_distribution<> distribution(-0.9, 0.9);
+    uniform_real_distribution<> distribution(-0.9, 0.9);
 
-	for( auto l : _layers )
+    for( auto l : _nodes )
 	{
 		auto a = vector<double>();
 		a.resize(l);
@@ -50,10 +46,81 @@ inline double Network::Sigmoid(double x,double temperature)
 	return (1.0 / (1+exp(-temperature*x)));
 }
 
-inline double Network::Derivative(double x)
+inline double Network::SigmoidDerivative(double x)
 {
 	return Sigmoid(x)*(1-Sigmoid(x));
 }
+
+inline vector<double> Network::Softmax(vector<double> input)
+{
+    double maxExponent = 700;
+    double minExponent = -700;
+    double max = maxExponent;
+    double min = minExponent;
+    for (size_t i=0; i< input.size(); ++i)
+    {
+        if (input.at(i) > max)
+            max = input.at(i);
+        else if (input.at(i) < min)
+            min = input.at(i);
+    }
+
+    double z = 0;
+    vector<double>ps;
+
+    if ((max != maxExponent)  &&
+        (min == minExponent))
+    {
+        for (size_t i=0; i< input.size(); ++i)
+             z += exp(input.at(i)-max);
+        for (size_t i=0; i< input.size(); ++i)
+            ps.push_back(exp(input.at(i)-max)/z);
+    }
+    else if ((max == maxExponent)  &&
+             (min != minExponent))
+    {
+        for (size_t i=0; i< input.size(); ++i)
+             z += exp(input.at(i)+abs(min));
+        for (size_t i=0; i< input.size(); ++i)
+            ps.push_back(exp(input.at(i)+abs(min))/z);
+    }
+    else if ((max != maxExponent)  &&
+             (min != minExponent))
+    {
+        Q_ASSERT(false); // We're basically fucked - until we think of something clever...
+
+        cout << "\\n. This is a bit embarrassing, but we seem to have encountered a small issue, regarding the implementation of the softmax function. Aborting... Please call back later.\n\n";
+    }
+    else
+    {
+        for (size_t i=0; i< input.size(); ++i)
+             z += exp(input.at(i));
+
+        // Still not entirely safe... ?
+
+        Q_ASSERT(z != 0);
+        Q_ASSERT(isfinite(z));
+
+        for (size_t i=0; i< input.size(); ++i)
+        {
+            Q_ASSERT(isfinite(input.at(i)));
+            ps.push_back(exp(input.at(i))/z);
+        }
+    }
+
+    for (size_t i=0; i<ps.size(); i++)
+    {
+        Q_ASSERT(isfinite(ps.at(i)));
+    }
+
+    return ps;
+}
+
+inline double Network::SoftmaxDerivative(double x)
+{
+    return x * (1 - x);
+}
+
 
 std::vector<double> Network::Normalize(std::vector<double> input)
 {
@@ -75,14 +142,16 @@ void Network::BackPropagate()
 {
 	// Deltas should be present at output before this is called - otherwise we're in deep dodo.
 
-	for (size_t l=_layers.size()-2; l>0; l--)
+    for (size_t l=_nodes.size()-2; l>0; l--)
 	{
-		for (size_t i=0; i<_layers.at(l); i++)
+        for (size_t i=0; i<_nodes.at(l); i++)
 		{
 			double x=0;
-			for (size_t j=0; j<_layers.at(l+1); j++)
+            for (size_t j=0; j<_nodes.at(l+1); j++)
 			{
-				x+= _weights.at(l).Element(i, j) * _deltas.at(l+1).at(j) * _derivatives.at(l).at(i);
+                x+= _weights.at(l).Element(i, j) *
+                        _deltas.at(l+1).at(j) *
+                        _derivatives.at(l).at(i);
 			}
 			_deltas.at(l).at(i) = x;
 		}
@@ -91,17 +160,18 @@ void Network::BackPropagate()
 
 void Network::UpdateWeights(double learningConstant)
 {
-	// Update weights
-	for (size_t l=0; l<_layers.size()-1; l++)
+    for (size_t l=0; l<_nodes.size()-1; l++)
 	{
-		for (size_t i=0; i<_layers.at(l); i++)
+        // Update weight matrixes
+        for (size_t i=0; i<_nodes.at(l); i++)
 		{
-			for (size_t j=0; j<_layers.at(l+1); j++)
+            for (size_t j=0; j<_nodes.at(l+1); j++)
 			{
 				_weights.at(l).Element(i, j) -= learningConstant * _deltas.at(l+1).at(j) * _activations.at(l).at(i);
 			}
 		}
-		for (size_t j=0; j<_layers.at(l); j++)
+        // Update biase vectors
+        for (size_t j=0; j<_nodes.at(l); j++)
 		{
 			_bias.at(l).at(j) -= learningConstant*_deltas.at(l).at(j);
 		}
@@ -111,7 +181,7 @@ void Network::UpdateWeights(double learningConstant)
 
 vector<double> & Network::Activate(vector<double> input)
 {
-	if (input.size() != _layers.at(0))
+    if (input.size() != _nodes.at(0))
 	{
 		cout << "Woops, we have discovered a slight impedance mismatch between the input layer and actual input.\nPanicking...\n";
 		exit(1);
@@ -119,113 +189,157 @@ vector<double> & Network::Activate(vector<double> input)
 
 	_activations.at(0) = Normalize(input);
 
-	for (size_t l=1; l<_layers.size(); l++)
+    size_t outputLayer = _nodes.size()-1;
+
+    // Sigmoid activation of everything up to the output layer
+    for (size_t activationLayer=1; activationLayer<_nodes.size(); activationLayer++)
 	{
-		for (size_t j=0; j<_layers.at(l); j++)
+        size_t feedLayer = activationLayer-1;
+        for (size_t j=0; j<_nodes.at(activationLayer); j++)
 		{
-			double x=0;
-			for (size_t i=0; i<_layers.at(l-1); i++)
+            double sum=0;
+            for (size_t i=0; i<_nodes.at(feedLayer); i++)
 			{
-				x+= _activations.at(l-1).at(i)*_weights.at(l-1).Element(i, j) + _bias.at(l-1).at(i);
+                sum+= _activations.at(feedLayer).at(i) *
+                      _weights.at(feedLayer).Element(i, j) +
+                      _bias.at(feedLayer).at(i);
+                Q_ASSERT(isfinite(sum));
 			}
-			_activations.at(l).at(j) = Sigmoid(x);
-			_derivatives.at(l).at(j) = Derivative(x);
+            if (activationLayer != outputLayer)
+            {
+                _activations.at(activationLayer).at(j) = Sigmoid(sum);
+                _derivatives.at(activationLayer).at(j) = SigmoidDerivative(sum);
+            }
+            else
+            {
+                _activations.at(activationLayer).at(j) = sum;
+                _derivatives.at(activationLayer).at(j) = SoftmaxDerivative(sum);
+            }
 		}
 	}
 
-	return _activations.at(_layers.size()-1);
+
+    _activations.at(outputLayer) = Softmax(_activations.at(outputLayer));
+
+    return _activations.at(outputLayer);
 }
 
 
-double Network::SetError(vector<double> expected)
+
+void Network::SetError(vector<double> expected)
 {
-	double error = 0;
-	size_t outputLayer = _layers.size()-1;
+    size_t outputLayer = _nodes.size()-1;
 	for (size_t i=0; i<_activations.at(outputLayer).size(); i++)
 	{
-		double arg = expected.at(i)-_activations.at(outputLayer).at(i);
-		error += 0.5*arg*arg;
-		_deltas.at(outputLayer).at(i) = _activations.at(outputLayer).at(i) - expected.at(i);
+        _deltas.at(outputLayer).at(i) = _activations.at(outputLayer).at(i)-expected.at(i);
 	}
-
-	return error;
 }
 
-void Network::ShowOff(TrainingSet & set)
+void Network::ShowOff(DataSet & set)
 {
 	for (int i=0; i<set.Size(); i++)
 	{
+        cout << "Set: " << i << " - ";
 		auto output = Activate(set.Input(i));
-
-		for (int j=0; j<set.Input(i).size(); j++)
-			cout << set.Input(i).at(j) << " ";
-		cout << " -> ";
+        cout << "label: ";
+        for (auto o: set.Output(i))
+            cout << o << " ";
+        cout << " -> ";
 		for (int j=0; j<output.size(); j++)
-			cout << output.at(j) << " ";
+            cout << output.at(j) << "  ";
 		cout << endl;
 	}
 }
 
-
-int Network::Train(TrainingSet & set, double learningConstant, double maxError, int maxIter)
+bool Network::IsEqual(vector<double> & a, vector<double> & b)
 {
-	vector<double> errors;
-	errors.resize(set.Size());
-	for (int iter=0; iter<maxIter; iter++)
+    for (int i=0; i<a.size(); i++)
+    {
+        if (abs(a.at(i) - abs(b.at(i))) > 0.01)
+            return false;
+    }
+    return true;
+}
+
+void Network::Run(DataSet & set)
+{
+    size_t correct = 0;
+    for (int i=0; i<set.Size(); i++)
+    {
+        Activate(set.Input(i));
+        if (IsEqual(set.Output(i), _activations.at(_nodes.size()-1)))
+            correct++;
+    }
+    ShowOff(set);
+
+    std::cout << "Correct predictions: " << correct << "/" << set.Size() << std::endl;
+}
+
+
+int Network::Train(DataSet & set, double learningConstant, int maxEpoch)
+{
+    int epoch = 0;
+    for (epoch=0; epoch<maxEpoch; epoch++)
 	{
-		errors.clear();
+        size_t correct = 0;
 		for (int i=0; i<set.Size(); i++)
 		{
 
-			double totalError = 0;
 			Activate(set.Input(i));
-			errors.push_back(SetError(set.Output(i)));
+            SetError(set.Output(i));
+            if (IsEqual(set.Output(i), _activations.at(_nodes.size()-1)))
+                correct++;
 			BackPropagate();
 			UpdateWeights(learningConstant);
-
-			if (iter % 10000 == 0)
-			{
-				for (auto e: errors)
-					totalError += e;
-				std::cout << "Iteration: " << iter <<  " (set " << i << ") - error: " << totalError << std::endl;
-			}
-
 		}
 
+        std::cout << "Epoch: " << epoch <<  ". Correct predictions: " << correct << "/" << set.Size() << std::endl;
 
-
-
-		bool passed = true;
-		for (auto e: errors)
-			if (e > maxError)
-				   passed = false;
-		if (passed)
-		{
-			ShowOff(set);
-			return iter;
+        if (correct == set.Size())
+        {
+            return epoch;
 		}
-
 	}
-	return -1;
+    return epoch;
 }
 
 
 
-
-void Network::TraceLayers()
+void Network::Serialize(string outputFileName)
 {
-	cout << "Layering structure : ";
-	for( auto l : _layers )
-	   cout << l << " ";
-	cout << "\n" << endl ;
+    QFile file( QString::fromStdString(outputFileName) );
+    if ( !file.open(QIODevice::ReadWrite) )
+    {
+        std::cout << "Error opening '" << outputFileName << "' for writing.";
+        return;
+    }
+
+    QTextStream stream( &file );
+    stream << "Network: ";
+    for (auto l: _nodes)
+        stream << l << " ";
+    stream << endl;
+    for (size_t l=0; l<_nodes.size(); l++)
+    {
+        for (size_t b=0; b<_nodes.at(l); b++)
+        {
+            stream << _bias.at(l).at(b) << " ";
+        }
+        stream << endl;
+    }
+    stream << endl;
+    for (size_t l=0; l<_nodes.size()-1; l++)
+        _weights.at(l).Serialize(stream);
+    stream << endl;
 }
 
-void Network::ExportAsDigraph(QString graphVizFileName)
+
+void Network::ExportAsDigraph(string graphVizFileName)
 {
-	QFile file( graphVizFileName );
+    QFile file( QString::fromStdString(graphVizFileName) );
 	if ( !file.open(QIODevice::ReadWrite) )
 	{
-		std::cout << "Error opening '" << graphVizFileName.toStdString() << "' for writing.";
+        std::cout << "Error opening '" << graphVizFileName << "' for writing.";
 		return;
 	}
 
@@ -237,11 +351,11 @@ void Network::ExportAsDigraph(QString graphVizFileName)
 	stream << "splines=line;\n";
 	stream << "graph [ordering=\"out\"];";
 
-	for (size_t l=0; l<_layers.size()-1; l++)
+    for (size_t l=0; l<_nodes.size()-1; l++)
 	{
-		for (size_t i=0; i<_layers.at(l); i++)
+        for (size_t i=0; i<_nodes.at(l); i++)
 		{
-			for (size_t j=0; j<_layers.at(l+1); j++)
+            for (size_t j=0; j<_nodes.at(l+1); j++)
 			{
 				stream <<
 				QString("L%1_N%2").arg(l).arg(i) <<
@@ -255,51 +369,6 @@ void Network::ExportAsDigraph(QString graphVizFileName)
 }
 
 
-void Network::TraceLayerAttributes(string name, vector<vector<double>> & attribute)
-{
-	cout << name << ":\t";
-
-	for (size_t l=0; l<attribute.size(); l++)
-	{
-		cout << "(";
-		for (size_t a=0; a < attribute.at(l).size(); a++)
-		{
-			cout << attribute.at(l).at(a);
-			if (a < attribute.at(l).size()-1)
-				cout << " ";
-		}
-		cout << ")\t";
-	}
-	cout << endl;
-}
-
-
-void Network::Trace()
-{
-	cout << "--------------------------------------------------------------\n";
-	cout << std::scientific;
-	TraceLayers();
-	TraceLayerAttributes("Activations", _activations);
-	TraceLayerAttributes("Derivatives", _derivatives);
-	TraceLayerAttributes("Deltas     ", _deltas);
-	TraceLayerAttributes("Bias       ", _bias);
-
-	cout << "\n" << _weights.size() << " weight matrixes defined\n";
-
-	string indexNames = "ijklmnopqrstuvwxyz";
-	string::iterator index = indexNames.begin();
-	for (auto & w: _weights)
-	{
-		w.Trace("matrix", *index, *(index+1));
-		index += 2;
-		if (index == indexNames.end())
-		{
-			std::cout << "Please don't...";
-			exit(1);
-		}
-	}
-
-}
 
 
 

@@ -5,7 +5,7 @@
 #include "matrix.h"
 #include <vector>
 #include <string>
-#include "trainingset.h"
+#include "dataset.h"
 
 using namespace std;
 
@@ -17,13 +17,14 @@ public:
 	Network(Layers layers);
 	~Network();
 
-	int Network::Train(TrainingSet & set, double learningConstant, double maxError, int maxIter);
-	void ExportAsDigraph(QString graphVizFileName);
+    int Train(DataSet & set, double learningConstant, int maxEpoch);
+    void Run(DataSet & set);
 
-	void Trace();
+    void ExportAsDigraph(string graphVizFileName);
+    void Serialize(string outputFileName);
 
 private:
-	vector<size_t> _layers;
+    vector<size_t> _nodes;
 	vector<vector<double>> _activations;
 	vector<vector<double>> _derivatives;
 	vector<vector<double>> _deltas;
@@ -34,15 +35,15 @@ private:
 	void UpdateWeights(double learningConstant);
 	void BackPropagate();
 	inline double Sigmoid(double x, double temperature = 1);
-	inline double Derivative(double x);
-	std::vector<double> Normalize(std::vector<double> input);
-	double SetError(vector<double> expected);
-	void ShowOff(TrainingSet & set);
+    inline double SigmoidDerivative(double x);
+    inline vector<double> Softmax(vector<double> input);
+    inline double SoftmaxDerivative(double x);
 
-	// Remove in release
-	void TraceLayers();
-	void TraceLayerAttributes(string name, vector<vector<double>> & attribute);
-	void TraceMatrixes();
+	std::vector<double> Normalize(std::vector<double> input);
+    void SetError(vector<double> expected);
+
+    void ShowOff(DataSet & set);
+    bool IsEqual(vector<double> & a, vector<double> & b);
 };
 
 #endif // NETWORK_H

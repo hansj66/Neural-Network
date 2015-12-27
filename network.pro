@@ -18,9 +18,16 @@ TEMPLATE = app
 SOURCES += main.cpp \
     matrix.cpp \
     network.cpp \
-    trainingset.cpp
+    dataset.cpp \
+    MNISTdataset.cpp \
+    customdataset.cpp
 
 HEADERS += \
     matrix.h \
     network.h \
-    trainingset.h
+    dataset.h \
+    customdataset.h \
+    MNISTdataset.h
+
+DISTFILES += \
+    TODO

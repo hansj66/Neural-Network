@@ -23,18 +23,18 @@ double & Matrix::Element(size_t i, size_t j)
 	return _matrix.at(i).at(j);
 }
 
-
-void Matrix::Trace(string name, char nameI, char nameJ)
+void Matrix::Serialize(QTextStream & stream)
 {
-	cout << "\n" << name << "[" << nameI << ", " << nameJ << "]\n";
-
-	for (int j=0; j<_j; j++)
-	{
-		for (int i=0; i<_i; i++)
-		{
-			cout << _matrix.at(i).at(j) << "\t";
-		}
-		cout << endl;
-	}
+    for (size_t j=0; j<_j; j++)
+    {
+        for (size_t i=0; i<_i; i++)
+        {
+            stream << _matrix.at(i).at(j) << " ";
+        }
+        stream << endl;
+    }
+    stream << endl;
 }
+
+
 
