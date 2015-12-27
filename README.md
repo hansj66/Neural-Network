@@ -19,7 +19,7 @@ Network n({784, 128, 63, 10});
 Load a dataset to be used for training or validation. The custom data set consist of two lists of comma separated numbers for input and expected output. The lists are separated by "->". A leading '#' indicates a comment.
 
 ```c++
-# Use a 5:5:1 network
+# Use a 5:5:2 network
 
 1,1,0,0,0 -> 1,0
 0,1,1,0,0 -> 1,0
