@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include "dataset.h"
+#include "IRegularization.h"
 
 using namespace std;
 
@@ -16,36 +17,38 @@ class Network
 public:
 	Network(Layers layers);
 	~Network();
-
-	int Train(DataSet & set, double learningConstant, int maxEpoch);
-	void Run(DataSet & set);
+	bool operator == (const Network & rhs) const;
+	bool operator != (const Network & rhs) const;
+	bool IsTopologicallyEquivalent(const Network & other) const;
+	int Train(DataSet & set, double learningRate, double momentum, int maxEpoch, double maxError);
+	int Run(DataSet & set, string label, bool showOff = false);
 
 	void ExportAsDigraph(string graphVizFileName);
 	void Serialize(string outputFileName);
+	void DeSerialize(string inputFileName);
 
 private:
-	vector<size_t> _nodes;
+	template <typename T> void Serialize(QDataStream & stream, vector<T> & state);
+	template <typename T> void Deserialize(QDataStream & stream, vector<T> & state);
+	void InitializeNetwork(size_t s);
+	vector<size_t>_layers;
 	vector<vector<double>> _activations;
 	vector<vector<double>> _derivatives;
 	vector<vector<double>> _deltas;
 	vector<vector<double>> _bias;
 	vector<Matrix> _weights;
-	// vector<Matrix> _deltaWeights; For distributed sync
-	// vector<double> _deltaBias
+	vector<Matrix> _nesterovMomentum;
 
 	vector<double> & Activate(vector<double> input);
-	void UpdateWeights(double learningConstant);
-	void BackPropagate();
-	inline double Sigmoid(double x, double temperature = 1);
-	inline double SigmoidDerivative(double x);
-	inline vector<double> Softmax(vector<double> input);
-	inline double SoftmaxDerivative(double x);
-
+	void UpdateWeights(double learningRate, double momentum, IRegularization * regularization);
+	void BackPropagateDeltas();
 	std::vector<double> Normalize(std::vector<double> input);
-	void SetError(vector<double> expected);
+	double SetError(vector<double> expected);
 
 	void ShowOff(DataSet & set);
-	bool IsEqual(vector<double> & a, vector<double> & b);
+	inline bool ClassifiesAsEqual(vector<double> & a, vector<double> & b);
+	inline int Max(vector<double> & a);
+	inline void VerifyFinite(double value);
 };
 
 #endif // NETWORK_H

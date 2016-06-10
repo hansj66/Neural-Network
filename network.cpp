@@ -1,22 +1,24 @@
-#include "network.h"
 #include <iostream>
-#include <random>
-#include <time.h>
-#include <QFile>
-#include <QTextStream>
 #include <limits>
+#include "L2.h"
+#include "network.h"
+#include <QDataStream>
+#include <QDebug>
+#include <QFile>
 #include <QTime>
-
+#include <random>
+#include "softmax.h"
+#include "tanh.h"
+#include <time.h>
 
 using namespace std;
 Network::Network(Layers layers) :
-	_nodes(layers)
+	_layers(layers)
 {
 	random_device random;
 	mt19937 engine(random());
-	uniform_real_distribution<> distribution(-0.9, 0.9);
 
-	for( auto l : _nodes )
+	for( auto l : _layers )
 	{
 		auto a = vector<double>();
 		a.resize(l);
@@ -25,20 +27,24 @@ Network::Network(Layers layers) :
 		_deltas.push_back(a);
 
 		auto bias = vector<double>();
-		for (int biasNode=0; biasNode<l; biasNode++)
+		for (int b=0; b<l; b++)
 		{
-			bias.push_back(distribution(engine));
+			bias.push_back(0);
 		}
 		_bias.push_back(bias);
 	}
 
 	for (size_t l=0; l<layers.size()-1; l++)
 	{
-		size_t i = _activations.at(l).size();
-		size_t j = _activations.at(l+1).size();
+		size_t i = _activations[l+1].size();
+		size_t j = _activations[l].size();
+
+		uniform_real_distribution<> distribution(-0.01/(sqrt(i)), 0.01/(sqrt(i))); // Tanh initializer
+		//uniform_real_distribution<> distribution(0, 0.001); // ReLU initializer 
 
 		_weights.push_back(Matrix(i, j, engine, distribution));
-//		_deltaWeights.push_back(Matrix(i, j)); For distributed sync
+
+		_nesterovMomentum.push_back(Matrix(i, j));
 	}
 }
 
@@ -46,205 +52,186 @@ Network::~Network()
 {
 }
 
-inline double Network::Sigmoid(double x,double temperature)
+bool Network::operator != (const Network & rhs) const
 {
-	return (1.0 / (1+exp(-temperature*x)));
-}
-
-inline double Network::SigmoidDerivative(double x)
-{
-	return Sigmoid(x)*(1-Sigmoid(x));
-}
-
-inline vector<double> Network::Softmax(vector<double> input)
-{
-	double maxExponent = 700;
-	double minExponent = -700;
-	double max = maxExponent;
-	double min = minExponent;
-	for (size_t i=0; i< input.size(); ++i)
-	{
-		if (input.at(i) > max)
-			max = input.at(i);
-		else if (input.at(i) < min)
-			min = input.at(i);
-	}
-
-	double z = 0;
-	vector<double>ps;
-
-	if ((max != maxExponent)  &&
-		(min == minExponent))
-	{
-		for (size_t i=0; i< input.size(); ++i)
-			 z += exp(input.at(i)-max);
-		for (size_t i=0; i< input.size(); ++i)
-			ps.push_back(exp(input.at(i)-max)/z);
-	}
-	else if ((max == maxExponent)  &&
-			 (min != minExponent))
-	{
-		for (size_t i=0; i< input.size(); ++i)
-			 z += exp(input.at(i)+abs(min));
-		for (size_t i=0; i< input.size(); ++i)
-			ps.push_back(exp(input.at(i)+abs(min))/z);
-	}
-	else if ((max != maxExponent)  &&
-			 (min != minExponent))
-	{
-		Q_ASSERT(false); // We're basically fucked - until we think of something clever...
-
-		cout << "\\n. This is a bit embarrassing, but we seem to have encountered a small issue, regarding the implementation of the softmax function. Aborting... Please call back later.\n\n";
-	}
-	else
-	{
-		for (size_t i=0; i< input.size(); ++i)
-			 z += exp(input.at(i));
-
-		// Still not entirely safe... ?
-
-		Q_ASSERT(z != 0);
-		Q_ASSERT(isfinite(z));
-
-		for (size_t i=0; i< input.size(); ++i)
-		{
-			Q_ASSERT(isfinite(input.at(i)));
-			ps.push_back(exp(input.at(i))/z);
-		}
-	}
-
-	for (size_t i=0; i<ps.size(); i++)
-	{
-		Q_ASSERT(isfinite(ps.at(i)));
-	}
-
-	return ps;
-}
-
-inline double Network::SoftmaxDerivative(double x)
-{
-	return x * (1 - x);
+	return !(*this == rhs);
 }
 
 
-std::vector<double> Network::Normalize(std::vector<double> input)
+bool Network::operator == (const Network & rhs) const
 {
-	// TODO: Normalize to mid /std.
+	if (_layers != rhs._layers)
+		return false;
+	if (_activations != rhs._activations)
+		return false;
+	if (_derivatives != rhs._derivatives)
+		return false;
+	if (_deltas != rhs._deltas)
+		return false;
+	if (_bias != rhs._bias)
+		return false;
+	if (_weights != rhs._weights)
+		return false;
 
-	std::vector<double> normalized;
-	double max = input.at(0);
+	return true;
+}
+
+bool Network::IsTopologicallyEquivalent(const Network & other) const
+{
+	if (_layers != other._layers)
+		return false;
+
+	return true;
+}
+
+vector<double> Network::Normalize(vector<double> input)
+{
+	vector<double> normalized;
+	double max = input[0];
 	for (size_t i=1; i<input.size(); i++)
-		if (input.at(i) > max)
-			max = input.at(i);
+		if (input[i] > max)
+			max = input[i];
 
 	for (size_t i=0; i<input.size(); i++)
-		normalized.push_back(0 == max ? 0 : input.at(i) /= max);
+		normalized.push_back(0 == max ? 0 : input[i] /= max);
 
 	return normalized;
 }
 
-void Network::BackPropagate()
-{
-	// Deltas should be present at output before this is called - otherwise we're in deep dodo.
 
-	for (size_t l=_nodes.size()-2; l>0; l--)
+void Network::BackPropagateDeltas()
+{
+	// Error delta should be present at output before this is called - otherwise we're in deep dodo.
+
+	size_t layerIndex = _layers.size() - 2;
+
+	do
 	{
-		for (size_t i=0; i<_nodes.at(l); i++)
+		auto & m = _weights[layerIndex].AsVector();
+
+		size_t iSize = _layers[layerIndex + 1];
+		size_t jSize = _layers[layerIndex];
+
+		size_t weightIndex = 0;
+		for (size_t j = 0; j < jSize; j++)
 		{
-			double x=0;
-			for (size_t j=0; j<_nodes.at(l+1); j++)
+			double targetDelta = 0;
+			for (size_t i = 0; i < iSize; i++)
 			{
-				x+= _weights.at(l).Element(i, j) *
-						_deltas.at(l+1).at(j) *
-						_derivatives.at(l).at(i);
+				targetDelta += m[weightIndex] * _deltas[layerIndex + 1][i] * _derivatives[layerIndex][j];
+				weightIndex++;
 			}
-			_deltas.at(l).at(i) = x;
+			_deltas[layerIndex][j] = targetDelta;
+		}
+
+		layerIndex--;
+
+	} while (layerIndex >= 1);
+}
+
+
+
+void Network::UpdateWeights(double learningRate, double momentum, IRegularization * regularization)
+{
+	for (size_t l = 0; l < _layers.size() - 1; l++)
+	{
+		auto & w = _weights[l].AsVector();
+		auto & n = _nesterovMomentum[l].AsVector();
+
+		size_t index = 0;
+		double nesterovNext = 0;
+		double weightChange = 0;
+		size_t iSize = _layers[l+1];
+		size_t jSize = _layers[l];
+		for (size_t i = 0; i < iSize; i++)
+		{
+			// Update weight matrix
+			for (size_t j = 0; j < jSize; j++)
+			{
+				// Using Nesterov momentum
+				index = j*iSize + i;
+				nesterovNext = momentum*n[index] + learningRate  * _deltas[l + 1][i] * _activations[l][j];
+				weightChange = momentum*n[index] - (1 + momentum) * nesterovNext - regularization->WeightUpdate(w[index]);
+				w[index] += weightChange;
+				n[index] = nesterovNext;
+
+				// Weight update (without momentum)
+				index = j*iSize + i;
+				w[index] -= learningRate  * _deltas[l + 1][i] * _activations[l][j] - regularization->WeightUpdate(w[index]);
+			}
+			// Update bias vectors
+			_bias[l+1][i] -= learningRate*_deltas[l+1][i];
 		}
 	}
 }
 
-void Network::UpdateWeights(double learningConstant)
-{
-	for (size_t l=0; l<_nodes.size()-1; l++)
-	{
-		// Update weight matrixes
-		for (size_t i=0; i<_nodes.at(l); i++)
-		{
-			for (size_t j=0; j<_nodes.at(l+1); j++)
-			{
-				double deltaWeight =  learningConstant  * _deltas.at(l+1).at(j) * _activations.at(l).at(i);
-// 				_deltaWeights.at(l).Element(i, j) = delta; For distributed sync
-				_weights.at(l).Element(i, j) -= deltaWeight;
-			}
-			// Update biase vectors
-			_bias.at(l).at(i) -= learningConstant*_deltas.at(l).at(i);
-		}
-	}
-
-	// MQTT Mosquitto
-	// Test mellom prosesser først med
-	// Fyr opp en egen vektserver. Bruk TCP/IP
-	// Ikke oppdater vektmatrise over,
-	// men signaller at ferdig.
-	// La master konsolidere alle vekter
-	// Vent på synkronisering og hent vekter tilbake i en smell
-}
 
 
 vector<double> & Network::Activate(vector<double> input)
 {
-	if (input.size() != _nodes.at(0))
+	if (input.size() != _layers[0])
 	{
 		cout << "Woops, we have discovered a slight impedance mismatch between the input layer and actual input.\nPanicking...\n";
 		exit(1);
 	}
 
-	_activations.at(0) = Normalize(input);
+	_activations[0] = Normalize(input);
 
-	size_t outputLayer = _nodes.size()-1;
+	size_t outputLayer = _layers.size()-1;
 
-	// Sigmoid activation of everything up to the output layer
-	for (size_t activationLayer=1; activationLayer<_nodes.size(); activationLayer++)
+	// ReLU activation of everything up to the output layer
+	for (size_t activationLayer=1; activationLayer<_layers.size(); activationLayer++)
 	{
 		size_t feedLayer = activationLayer-1;
-		for (size_t j=0; j<_nodes.at(activationLayer); j++)
+		auto & m = _weights[feedLayer].AsVector();
+
+		size_t iSize = _layers[activationLayer];
+		for (size_t i = 0; i < iSize; i++)
 		{
-			double sum=0;
-			for (size_t i=0; i<_nodes.at(feedLayer); i++)
+			double sum = 0;
+			auto & activations = _activations[feedLayer];
+			for (size_t j = 0; j < _layers[feedLayer]; j++)
 			{
-				sum+= _activations.at(feedLayer).at(i) *
-					  _weights.at(feedLayer).Element(i, j) +
-					  _bias.at(feedLayer).at(i);
-				Q_ASSERT(isfinite(sum));
+				sum += activations[j] * m[j*iSize + i];
 			}
 			if (activationLayer != outputLayer)
 			{
-				_activations.at(activationLayer).at(j) = Sigmoid(sum);
-				_derivatives.at(activationLayer).at(j) = SigmoidDerivative(sum);
+				_activations[activationLayer][i] = Tanh(sum + _bias[activationLayer][i]);
+				_derivatives[activationLayer][i] = TanhDerivative(sum);
 			}
 			else
 			{
-				_activations.at(activationLayer).at(j) = sum;
-				_derivatives.at(activationLayer).at(j) = SoftmaxDerivative(sum);
+				_activations[activationLayer][i] = sum;
+
 			}
 		}
 	}
 
+	_activations[outputLayer] = Softmax(_activations[outputLayer]);
+	_derivatives[outputLayer] = SoftmaxDerivative(_activations[outputLayer]);
 
-	_activations.at(outputLayer) = Softmax(_activations.at(outputLayer));
 
-	return _activations.at(outputLayer);
+	for (size_t j=0; j<_layers[outputLayer]; j++)
+	{
+		VerifyFinite(_derivatives[outputLayer][j]);
+	}
+	return _activations[outputLayer];
 }
 
-
-
-void Network::SetError(vector<double> expected)
+double Network::SetError(vector<double> expected)
 {
-	size_t outputLayer = _nodes.size()-1;
-	for (size_t i=0; i<_activations.at(outputLayer).size(); i++)
+	// TODO: Parametrize L1 / L2 regularization ?
+
+	size_t outputLayer = _layers.size()-1;
+
+	double totalError = 0;
+	for (size_t i=0; i<_activations[outputLayer].size(); i++)
 	{
-		_deltas.at(outputLayer).at(i) = _activations.at(outputLayer).at(i)-expected.at(i);
+		//_deltas[outputLayer][i] = 0.5*(_activations[outputLayer][i]-expected[i])*(_activations[outputLayer][i] - expected[i]);
+		_deltas[outputLayer][i] = _activations[outputLayer][i] - expected[i];
+		totalError += 0.5*(_activations[outputLayer][i] - expected[i])*(_activations[outputLayer][i] - expected[i]);
 	}
+	return totalError;
 }
 
 void Network::ShowOff(DataSet & set)
@@ -258,99 +245,171 @@ void Network::ShowOff(DataSet & set)
 			cout << o << " ";
 		cout << " -> ";
 		for (int j=0; j<output.size(); j++)
-			cout << output.at(j) << "  ";
+			cout << output[j] << "  ";
 		cout << endl;
 	}
 }
 
-bool Network::IsEqual(vector<double> & a, vector<double> & b)
+inline int Network::Max(vector<double> & a)
 {
-	for (int i=0; i<a.size(); i++)
+	int maxIndex = 0;
+	double maxValue = a[0];
+	for (int i=1; i<a.size(); i++)
 	{
-		if (abs(a.at(i) - abs(b.at(i))) > 0.01)
-			return false;
+		if (a[i] > maxValue)
+		{
+			maxValue = a[i];
+			maxIndex = i;
+		}
 	}
-	return true;
+
+	return maxIndex;
 }
 
-void Network::Run(DataSet & set)
+inline bool Network::ClassifiesAsEqual(vector<double> & a, vector<double> & b)
 {
-	size_t correct = 0;
-	for (int i=0; i<set.Size(); i++)
+	return (Max(a) == Max(b));
+}
+
+int Network::Run(DataSet & set, string label, bool showOff)
+{
+	int correct = 0;
+	for (int i = 0; i < set.Size(); i++)
 	{
 		Activate(set.Input(i));
-		if (IsEqual(set.Output(i), _activations.at(_nodes.size()-1)))
+		if (ClassifiesAsEqual(set.Output(i), _activations[_layers.size() - 1]))
+		{
 			correct++;
+		}
 	}
-	ShowOff(set);
+	if (showOff)
+		ShowOff(set);
 
-	std::cout << "Correct predictions: " << correct << "/" << set.Size() << std::endl;
+	cout << label  << ", Correct predictions: " << correct << "/" << set.Size() << endl;
+	return correct;
 }
 
-
-int Network::Train(DataSet & set, double learningConstant, int maxEpoch)
+int Network::Train(DataSet & set, double learningRate, double momentum, int maxEpoch, double maxError)
 {
 	QTime time;
+	time.start();
+
+	auto regularization = L2(_weights, set.Size(), 0.1 /* lambda*/ , learningRate);
+
 	int epoch = 0;
 	for (epoch=0; epoch<maxEpoch; epoch++)
 	{
-		size_t correct = 0;
-		for (int i=0; i<set.Size(); i++)
-		{
-// #ifdef _DEBUG
-//			time.start();
-//#endif
 
+		double error = 0;
+		for (int i = 0; i < set.Size(); i++)
+		{
 			Activate(set.Input(i));
-			SetError(set.Output(i));
-			if (IsEqual(set.Output(i), _activations.at(_nodes.size()-1)))
-				correct++;
-			BackPropagate();
-			UpdateWeights(learningConstant);
-// #ifdef _DEBUG
-//			cout << time.elapsed() << endl;
-// #endif
+			error += SetError(set.Output(i));
+			BackPropagateDeltas();
+			UpdateWeights(learningRate, momentum, &regularization);
 		}
+		cout.precision(8);
+		cout << "Epoch: " << epoch <<  ". Total error: " << error << " (regularization cost: " << regularization.Cost() << ")" << endl;
 
-		std::cout << "Epoch: " << epoch <<  ". Correct predictions: " << correct << "/" << set.Size() << std::endl;
-
-		if (correct == set.Size())
+		if (error < maxError)
 		{
+			cout << "Set trained in : " << time.elapsed()/1000.0 << " seconds." << endl;
 			return epoch;
 		}
 	}
+
 	return epoch;
 }
 
-
+template <typename T> void Network::Serialize(QDataStream & stream, vector<T> & state)
+{
+	stream << state.size();
+	for (auto s: state)
+		stream << s;
+}
 
 void Network::Serialize(string outputFileName)
 {
 	QFile file( QString::fromStdString(outputFileName) );
 	if ( !file.open(QIODevice::ReadWrite) )
 	{
-		std::cout << "Error opening '" << outputFileName << "' for writing.";
+		cout << "Error opening '" << outputFileName << "' for writing.";
 		return;
 	}
 
-	QTextStream stream( &file );
-	stream << "Network: ";
-	for (auto l: _nodes)
-		stream << l << " ";
-	stream << endl;
-	for (size_t l=0; l<_nodes.size(); l++)
+	QDataStream stream( &file );
+	Serialize(stream, _layers);
+	for (size_t l=0; l<_layers.size(); l++)
 	{
-		for (size_t b=0; b<_nodes.at(l); b++)
-		{
-			stream << _bias.at(l).at(b) << " ";
-		}
-		stream << endl;
+		Serialize(stream, _activations[l]);
+		Serialize(stream, _derivatives[l]);
+		Serialize(stream, _deltas[l]);
+		Serialize(stream, _bias[l]);
 	}
-	stream << endl;
-	for (size_t l=0; l<_nodes.size()-1; l++)
-		_weights.at(l).Serialize(stream);
-	stream << endl;
+	for (size_t w=0; w<_weights.size(); w++)
+	{
+		stream << _weights[w].I();
+		stream << _weights[w].J();
+
+		Serialize(stream, _weights[w].AsVector());
+	}
 }
+
+template <typename T> void Network::Deserialize(QDataStream & stream, vector<T> & state)
+{
+	size_t size;
+	stream >> size;
+	state.resize(size);
+
+	for (size_t i=0; i<size; i++)
+	{
+		T element;
+		stream >> element;
+		state[i] = element;
+	}
+}
+
+void Network::InitializeNetwork(size_t s)
+{
+	_activations.resize(s);
+	_derivatives.resize(s);
+	_deltas.resize(s);
+	_bias.resize(s);
+	_weights.resize(s-1);
+}
+
+void Network::DeSerialize(string inputFileName)
+{
+	QFile file( QString::fromStdString(inputFileName) );
+	if ( !file.open(QIODevice::ReadOnly) )
+	{
+		cout << "Error opening '" << inputFileName << "' for reading.";
+		return;
+	}
+
+	QDataStream stream(file.readAll());
+
+	Deserialize(stream, _layers);
+	InitializeNetwork(_layers.size());
+	for (size_t l=0; l<_layers.size(); l++)
+	{
+		Deserialize(stream, _activations[l]);
+		Deserialize(stream, _derivatives[l]);
+		Deserialize(stream, _deltas[l]);
+		Deserialize(stream, _bias[l]);
+	}
+	for (size_t l=0; l<_layers.size()-1; l++)
+	{
+		size_t I;
+		size_t J;
+		stream >> I;
+		stream >> J;
+		Matrix m(I, J);
+		Deserialize(stream, m.AsVector());
+		_weights[l] = m;
+	}
+}
+
 
 
 void Network::ExportAsDigraph(string graphVizFileName)
@@ -358,7 +417,7 @@ void Network::ExportAsDigraph(string graphVizFileName)
 	QFile file( QString::fromStdString(graphVizFileName) );
 	if ( !file.open(QIODevice::ReadWrite) )
 	{
-		std::cout << "Error opening '" << graphVizFileName << "' for writing.";
+		cout << "Error opening '" << graphVizFileName << "' for writing.";
 		return;
 	}
 
@@ -370,11 +429,11 @@ void Network::ExportAsDigraph(string graphVizFileName)
 	stream << "splines=line;\n";
 	stream << "graph [ordering=\"out\"];";
 
-	for (size_t l=0; l<_nodes.size()-1; l++)
+	for (size_t l=0; l<_layers.size()-1; l++)
 	{
-		for (size_t i=0; i<_nodes.at(l); i++)
+		for (size_t i=0; i<_layers[l]; i++)
 		{
-			for (size_t j=0; j<_nodes.at(l+1); j++)
+			for (size_t j=0; j<_layers[l+1]; j++)
 			{
 				stream <<
 				QString("L%1_N%2").arg(l).arg(i) <<
@@ -387,6 +446,13 @@ void Network::ExportAsDigraph(string graphVizFileName)
 	stream << "\n}\n";
 }
 
+inline void Network::VerifyFinite(double value)
+{
+	if (!isfinite(value))
+	{
+		throw string("Runaway weights...");
+	}
+}
 
 
 

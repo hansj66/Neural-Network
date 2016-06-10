@@ -1,28 +1,36 @@
 #include "network.h"
 
+#include <QCoreApplication>
 #include <iostream>
 #include <vector>
 #include "customdataset.h"
 #include "MNISTdataset.h"
 #include <QTime>
+#include <QFile>
+#include <ctime>
+#include <cstdlib>
+#include <QTextStream>
+#include "trainingthread.h"
+#include <QTimer>
+#include "autotest.h"
 
 using namespace std;
 
 
 
-void Example1_TrainXOR()
+void Example1_TrainCustom()
 {
-	CustomDataSet trainingSet("..\\XOR.training");
+	CustomDataSet trainingSet("logic.train");
 
 	forever
 	{
 		QTime time;
 		time.start();
 
-		Network n({2, 3, 2});
+		Network n({2, 5, 5, 2});
 
 		int maxEpoch = 50000;
-		int epoch = n.Train(trainingSet, 0.2, 50000);
+		int epoch = n.Train(trainingSet, 0.01, 0.7, 50000, 0.02);
 
 		if (epoch == maxEpoch)
 		{
@@ -34,7 +42,7 @@ void Example1_TrainXOR()
 			cout << "\nTraining result : ";
 			cout << "Finished after "  << epoch << " epochs (" << time.elapsed() << " ms)" << endl;
 			cout << "Verifying against test set...\n";
-			n.Run(trainingSet);
+			n.Run(trainingSet, "Training set", true);
 			n.ExportAsDigraph("d:\\network.gv");
 			n.Serialize("d:\\XORWeightsAndBiases.network");
 			break;
@@ -43,40 +51,72 @@ void Example1_TrainXOR()
 }
 
 
-void Example2_TrainMNIST()
+void Example2_TrainMNIST(MNISTDataSet & trainingSet, MNISTDataSet & testSet)
 {
-	MNISTDataSet trainingSet("train-images.idx3-ubyte", "train-labels.idx1-ubyte", 1000);
-	MNISTDataSet testSet("t10k-images.idx3-ubyte", "t10k-labels.idx1-ubyte", 100);
+	QTime time;
+	time.start();
 
-	forever
+	Network n({784, 128, 10});
+	if (QFile("MNISTWeightsAndBiases.network").exists())
+		n.DeSerialize("MNISTWeightsAndBiases.network");
+
+	int batchSize = 3000;
+	DataSet batch = trainingSet.CreateBatch(batchSize);
+	int maxEpoch = 100;
+	try
 	{
-		QTime time;
-		time.start();
+		n.Train(batch, 0.02 , 0.7, maxEpoch, 0.2);
+		n.Serialize("MNISTWeightsAndBiases.network");
 
-		Network n({784, 63, 10});
+		int trainingFit = n.Run(batch, "Training set");
+		int testFit = n.Run(testSet, "Test set");
 
-		int maxEpoch = 1000;
-		int epoch = n.Train(trainingSet, 0.2, maxEpoch);
-
-		if (epoch == maxEpoch)
+		QString logFileName = "network.training.log";
+		QFile file(logFileName);
+		if ( !file.open(QIODevice::Append) )
 		{
-			cout << "\nGiving up. Restarting..." << endl;
-			continue;
+			cout << "Error opening '" << logFileName.toStdString() << "' for writing." << endl;
+			exit(1);
 		}
-		else
-		{
-			cout << "\nTraining result : ";
-			cout << "Finished after "  << epoch << " epochs (" << time.elapsed() << " ms)" << endl;
-			cout << "Verifying against test set...\n";
-			n.Run(testSet);
-			n.ExportAsDigraph("d:\\network.gv");
-			n.Serialize("d:\\MNISTWeightsAndBiases.network");
-			break;
-		}
+
+		QTextStream stream( &file );
+		stream << trainingFit << "/" << batch.Size() << "," << testFit << "/" << testSet.Size() << endl;
+		file.close();
+
+		n.ExportAsDigraph("network.gv");
+
+
+	}
+	catch(string ex)
+	{
+		cout << ex << " Skipping batch..." << endl;
 	}
 }
 
-int main(int /* argc */ , char /* *argv[]*/ )
+int main(int argc, char *argv[])
 {
-	Example2_TrainMNIST();
+	Q_UNUSED(argc);
+	Q_UNUSED(argv);
+	try
+	{
+		srand(time(0));
+
+//		Example1_TrainCustom();
+
+
+#ifdef RUN_UNIT_TESTS
+		return UnitTest::run(1 /* ignore arguments */, argv);
+#endif
+
+		MNISTDataSet trainingSet("train-images.idx3-ubyte", "train-labels.idx1-ubyte", 59992);
+		MNISTDataSet testSet("t10k-images.idx3-ubyte", "t10k-labels.idx1-ubyte", 9900);
+		forever
+		{
+			Example2_TrainMNIST(trainingSet, testSet);
+		}
+	}
+	catch (string ex)
+	{
+		cout << ex << endl;
+	}
 }
