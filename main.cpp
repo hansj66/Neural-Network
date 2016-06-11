@@ -10,7 +10,6 @@
 #include <ctime>
 #include <cstdlib>
 #include <QTextStream>
-#include "trainingthread.h"
 #include <QTimer>
 #include "autotest.h"
 
@@ -108,8 +107,8 @@ int main(int argc, char *argv[])
 		return UnitTest::run(1 /* ignore arguments */, argv);
 #endif
 
-		MNISTDataSet trainingSet("train-images.idx3-ubyte", "train-labels.idx1-ubyte", 59992);
-		MNISTDataSet testSet("t10k-images.idx3-ubyte", "t10k-labels.idx1-ubyte", 9900);
+		MNISTDataSet trainingSet(".\\TrainingSets\\MNITS\\train-images.idx3-ubyte", ".\\TrainingSets\\MNITS\\train-labels.idx1-ubyte", 59992);
+		MNISTDataSet testSet(".\\TrainingSets\\MNITS\\t10k-images.idx3-ubyte", ".\\TrainingSets\\MNITS\\t10k-labels.idx1-ubyte", 9900);
 		forever
 		{
 			Example2_TrainMNIST(trainingSet, testSet);

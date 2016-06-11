@@ -23,8 +23,7 @@ MNISTDataSet::MNISTDataSet(string input, string output, quint32 maxImages)
 
 	if (!trainingSet.is_open())
 	{
-		cout << "Error. Unable to open training set file: " << input << endl;
-		return;
+		throw string("Error. Unable to open training set file");
 	}
 
 	/* File format:
