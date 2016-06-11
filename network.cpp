@@ -155,8 +155,8 @@ void Network::UpdateWeights(double learningRate, double momentum, IRegularizatio
 				n[index] = nesterovNext;
 
 				// Weight update (without momentum)
-				index = j*iSize + i;
-				w[index] -= learningRate  * _deltas[l + 1][i] * _activations[l][j] - regularization->WeightUpdate(w[index]);
+				//index = j*iSize + i;
+				//w[index] -= learningRate  * _deltas[l + 1][i] * _activations[l][j] - regularization->WeightUpdate(w[index]);
 			}
 			// Update bias vectors
 			_bias[l+1][i] -= learningRate*_deltas[l+1][i];
