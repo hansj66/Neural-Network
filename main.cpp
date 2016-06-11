@@ -107,8 +107,8 @@ int main(int argc, char *argv[])
 		return UnitTest::run(1 /* ignore arguments */, argv);
 #endif
 
-		MNISTDataSet trainingSet(".\\TrainingSets\\MNITS\\train-images.idx3-ubyte", ".\\TrainingSets\\MNITS\\train-labels.idx1-ubyte", 59992);
-		MNISTDataSet testSet(".\\TrainingSets\\MNITS\\t10k-images.idx3-ubyte", ".\\TrainingSets\\MNITS\\t10k-labels.idx1-ubyte", 9900);
+		MNISTDataSet trainingSet(".\\TrainingSets\\MNIST\\train-images.idx3-ubyte", ".\\TrainingSets\\MNIST\\train-labels.idx1-ubyte", 59992);
+		MNISTDataSet testSet(".\\TrainingSets\\MNIST\\t10k-images.idx3-ubyte", ".\\TrainingSets\\MNIST\\t10k-labels.idx1-ubyte", 9900);
 		forever
 		{
 			Example2_TrainMNIST(trainingSet, testSet);
