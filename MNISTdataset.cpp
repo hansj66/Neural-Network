@@ -1,6 +1,7 @@
 #include "MNISTdataset.h"
 #include <iostream>
 #include <fstream>
+#include <QDir>
 
 using namespace std;
 
@@ -19,6 +20,7 @@ quint32 MNISTDataSet::Parameter(unsigned char * memory)
 
 MNISTDataSet::MNISTDataSet(string input, string output, quint32 maxImages)
 {
+	
 	ifstream trainingSet(input,  ios::in|ios::binary|ios::ate);
 
 	if (!trainingSet.is_open())

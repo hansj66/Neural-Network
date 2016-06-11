@@ -8,7 +8,7 @@
 #include <QTime>
 #include <random>
 #include "softmax.h"
-#include "tanh.h"
+#include "Tanh.h"
 #include <time.h>
 
 using namespace std;
@@ -97,7 +97,6 @@ vector<double> Network::Normalize(vector<double> input)
 
 	return normalized;
 }
-
 
 void Network::BackPropagateDeltas()
 {
